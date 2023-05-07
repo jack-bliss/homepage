@@ -1,4 +1,4 @@
-export const PROJECT_NAME = 'Template';
+export const PROJECT_NAME = 'Homepage';
 export const PORT = 9000;
 
 export const DOMAIN = 'jackbliss.co.uk';

@@ -23,8 +23,8 @@ export class CdkStack extends Stack {
     super(scope, id, props);
 
     // generate the target base URL for this app
-    const appSubdomainName = projectNameToSubdomain(id);
-    const appDomainName = `${appSubdomainName}.${routingProps.domain}`;
+    // targets base domain
+    const appDomainName = routingProps.domain;
 
     // create storage bucket that can be read from and written to
     const { bucket } = createBucket({

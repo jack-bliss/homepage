@@ -22,6 +22,7 @@ export function createBucket({
     blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
     enforceSSL: true,
     removalPolicy: RemovalPolicy.DESTROY,
+    autoDeleteObjects: true,
   });
 
   const deployment = new s3_deployment.BucketDeployment(

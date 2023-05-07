@@ -1,0 +1,13 @@
+{
+  "watch": [
+    "src"
+  ],
+  "ignore": [
+    "src/**/*.test.ts"
+  ],
+  "ext": "ts,tsx,css,json,html",
+  "exec": "npm run build:client && npm run build:server && node ./dist/server.js",
+  "events": {
+    "start": ""
+  }
+}

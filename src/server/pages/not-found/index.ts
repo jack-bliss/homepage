@@ -8,7 +8,7 @@ notFound.get('*', (req, res) => {
   const page = renderTemplate(template, {
     title: '404',
     body: '<h1>404</h1>',
-    styles: '<link href="bundles/styles.css" rel="stylesheet" />',
+    styles: '<link rel="stylesheet" href="bundles/styles.css" />',
   });
-  res.type('text/html').send(page);
+  res.type('text/html').status(404).send(page);
 });

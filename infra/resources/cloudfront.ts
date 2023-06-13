@@ -11,63 +11,40 @@ export const createDistribution = ({
   domainName,
   certificateArn,
   aliases,
+  origin,
 }: {
   context: Construct;
   id: string;
   domainName: string;
   certificateArn: string;
   aliases: string[];
+  origin: cloudfront.IOrigin;
 }) => {
-  const cloudFrontWebDistribution =
-    new cloudfront.CloudFrontWebDistribution(context, `${id}_CloudFront`, {
-      comment: `${id}HttpService cache behaviour`,
-      defaultRootObject: '',
-      viewerCertificate: cloudfront.ViewerCertificate.fromAcmCertificate(
-        certificatemanager.Certificate.fromCertificateArn(
+  const distribution = new cloudfront.Distribution(
+    context,
+    `${id}_Cloudfront`,
+    {
+      comment: `${domainName} ${id} cache behaviour`,
+      defaultBehavior: {
+        origin,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+        cachePolicy: new cloudfront.CachePolicy(
           context,
-          `${id}_certificate`,
-          certificateArn,
-        ),
-        {
-          aliases,
-        },
-      ),
-      originConfigs: [
-        {
-          customOriginSource: {
-            domainName,
-            originProtocolPolicy:
-              cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
+          `${id}_CachePolicy`,
+          {
+            defaultTtl: Duration.seconds(10),
+            minTtl: Duration.seconds(0),
+            maxTtl: Duration.hours(1),
           },
-          behaviors: [
-            {
-              isDefaultBehavior: true,
-              allowedMethods: cloudfront.CloudFrontAllowedMethods.ALL,
-              forwardedValues: {
-                queryString: true,
-                cookies: {
-                  forward: 'all',
-                },
-                headers: [
-                  'Accept',
-                  'Accept-Charset',
-                  'Accept-Language',
-                  'Accept-Encoding',
-                  'Authorization',
-                  'Origin',
-                  'Referrer',
-                  'Access-Control-Request-Method',
-                  'Access-Control-Request-Headers',
-                ],
-              },
-              defaultTtl: Duration.seconds(10),
-              minTtl: Duration.seconds(0),
-              maxTtl: Duration.hours(1),
-              functionAssociations: [],
-            },
-          ],
-        },
-      ],
-    });
-  return { cloudFrontWebDistribution };
+        ),
+      },
+      domainNames: aliases,
+      certificate: certificatemanager.Certificate.fromCertificateArn(
+        context,
+        `${id}_CloudFront_CertificateReference`,
+        certificateArn,
+      ),
+    },
+  );
+  return { distribution };
 };

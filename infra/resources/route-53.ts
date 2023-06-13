@@ -11,14 +11,14 @@ export const createARecord = ({
   hostedZoneId,
   zoneName,
   recordName,
-  cloudFrontWebDistribution,
+  distribution,
 }: {
   context: Construct;
   id: string;
   hostedZoneId: string;
   zoneName: string;
   recordName: string;
-  cloudFrontWebDistribution: IDistribution;
+  distribution: IDistribution;
 }) => {
   new route53.ARecord(context, `${id}_CDN_ARecord`, {
     zone: route53.HostedZone.fromHostedZoneAttributes(
@@ -31,7 +31,7 @@ export const createARecord = ({
     ),
     recordName,
     target: route53.RecordTarget.fromAlias(
-      new route53Targets.CloudFrontTarget(cloudFrontWebDistribution),
+      new route53Targets.CloudFrontTarget(distribution),
     ),
   });
 };

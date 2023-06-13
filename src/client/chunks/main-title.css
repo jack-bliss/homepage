@@ -1,23 +1,7 @@
-:root {
-  --color-murk: hsl(240 20% 4%);
-  --color-shell: hsl(0 0% 90%);
-  --color-orange: hsl(36 100% 50%);
-  --color-sky: hsl(193 100% 50%);
-}
-
-body {
-  --background: var(--color-murk);
-  --color: var(--color-shell);
-
-  font-family: 'Poppins', sans-serif;
-  background: var(--background);
-  color: var(--color);
-}
-
-h1 {
+h1.main-title {
   --shadow-offset: 5px;
-  --a-color: var(--color-orange);
-  --b-color: var(--color-sky);
+  --a-color: var(--primary);
+  --b-color: var(--secondary);
   --b-multiplier: -1;
 
   width: 100vw;

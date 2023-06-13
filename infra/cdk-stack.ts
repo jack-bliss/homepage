@@ -1,11 +1,18 @@
-import { Fn, App, Stack, StackProps, aws_iam as iam } from 'aws-cdk-lib';
+import {
+  Fn,
+  App,
+  Stack,
+  StackProps,
+  CfnOutput,
+  aws_cloudfront,
+  aws_cloudfront_origins,
+} from 'aws-cdk-lib';
 import { Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { join } from 'path';
 import { createNodejsFunction } from './resources/lambda';
 import { createDistribution } from './resources/cloudfront';
 import { createARecord } from './resources/route-53';
 import { createBucket } from './resources/s3';
-import { projectNameToSubdomain } from './helpers/project-name-to-subdomain';
 
 type RoutingProps = {
   certificateArn: string;
@@ -35,7 +42,7 @@ export class CdkStack extends Stack {
     });
 
     // create actual lambda function that implements server (HttpService)
-    const { functionUrl } = createNodejsFunction({
+    const { nodejsFunction, functionUrl } = createNodejsFunction({
       context: this,
       id,
       entry: join(__dirname, '../src/server/lambda.ts'),
@@ -47,12 +54,13 @@ export class CdkStack extends Stack {
     const functionDomainName = Fn.select(0, Fn.split('/', functionApiUrl));
 
     // create cloudfront distribution
-    const { cloudFrontWebDistribution } = createDistribution({
+    const { distribution } = createDistribution({
       context: this,
       id,
       domainName: functionDomainName,
       certificateArn: routingProps.certificateArn,
       aliases: [appDomainName],
+      origin: new aws_cloudfront_origins.HttpOrigin(functionDomainName),
     });
 
     // create a-record cloudfront distribution
@@ -62,7 +70,22 @@ export class CdkStack extends Stack {
       hostedZoneId: routingProps.hostedZoneId,
       zoneName: routingProps.domain,
       recordName: appDomainName,
-      cloudFrontWebDistribution,
+      distribution,
+    });
+
+    new CfnOutput(this, `CloudFrontDistribution`, {
+      value: distribution.distributionId,
+    });
+
+    new CfnOutput(this, `LambdaFunctionUrl`, {
+      value: functionUrl.url,
+    });
+    new CfnOutput(this, `LambdaLogGroupUrl`, {
+      value: `https://eu-west-2.console.aws.amazon.com/cloudwatch/home?region=eu-west-2#logsV2:log-groups/log-group/$252Faws$252Flambda$252F${nodejsFunction.functionName}`,
+    });
+    new CfnOutput(this, `AssetsBucketName`, { value: bucket.bucketName });
+    new CfnOutput(this, `PublicUrl`, {
+      value: `https://${appDomainName}`,
     });
   }
 }

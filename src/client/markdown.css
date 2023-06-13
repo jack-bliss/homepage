@@ -1,0 +1,21 @@
+@import './theme/palette.css';
+@import './theme/semantic.css';
+@import './chunks/body.css';
+@import './chunks/markdown-wrapper.css';
+@import './chunks/links.css';
+
+body {
+  font-size: 120%;
+}
+
+pre.hljs {
+  padding: 1em;
+  border-radius: 4px;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin-top: 20px;
+}

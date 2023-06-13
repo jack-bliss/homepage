@@ -1,6 +1,8 @@
 import { NextFunction, Request, Response } from 'express';
 import { getAsset } from '../services';
 import { NotFoundError } from '../services/get-asset/not-found-error';
+import { renderMarkdown } from './render-markdown';
+import { fileNameToTitle } from './render-markdown/file-name-to-title';
 
 const fileTypeAndContentType = [
   { file: 'css', content: 'text/css' },
@@ -19,11 +21,25 @@ const fileTypeAndContentType = [
 
 const defaultContentType = 'text/plain';
 
-function getContentType(path: string) {
+type ContentType =
+  | (typeof fileTypeAndContentType)[number]['content']
+  | typeof defaultContentType;
+
+type FileType =
+  | (typeof fileTypeAndContentType)[number]['file']
+  | 'unknown';
+
+function getContentType(path: string): {
+  contentType: ContentType;
+  fileType: FileType;
+} {
   const type = fileTypeAndContentType.find(({ file }) => {
     return path.endsWith(`.${file}`);
   });
-  return type?.content || defaultContentType;
+  return {
+    fileType: type?.file || 'unknown',
+    contentType: type?.content || defaultContentType,
+  };
 }
 
 export async function serveAssets(
@@ -36,8 +52,19 @@ export async function serveAssets(
     return next();
   }
   try {
+    const { contentType } = getContentType(path);
     const asset = await getAsset(path);
-    const contentType = getContentType(path);
+    if (contentType === 'text/markdown' && req.query.raw !== 'true') {
+      res
+        .type('text/html')
+        .send(
+          await renderMarkdown(
+            fileNameToTitle(path),
+            asset.toString('utf-8'),
+          ),
+        );
+      return;
+    }
     res.type(contentType).send(asset);
   } catch (error: unknown) {
     if (error instanceof NotFoundError) {

@@ -1,0 +1,6 @@
+:root {
+  --background: var(--color-murk);
+  --text: var(--color-shell);
+  --primary: var(--color-orange);
+  --secondary: var(--color-sky);
+}

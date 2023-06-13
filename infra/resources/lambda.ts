@@ -4,6 +4,7 @@ import {
   aws_lambda,
   aws_s3 as s3,
   aws_iam as iam,
+  aws_apigatewayv2 as apigateway,
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 

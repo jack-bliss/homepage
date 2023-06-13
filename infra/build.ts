@@ -8,22 +8,29 @@ const isValidEntry = (test: string): test is ValidEntry =>
   (validEntries as readonly string[]).includes(test);
 
 program.requiredOption(
-  '--target <server or lambda>',
+  '--entry <server or lambda>',
   'Either server or lambda',
 );
 
 program.parse();
 
-const { target } = program.opts() as {
-  target: string;
+const { entry } = program.opts() as {
+  entry: string;
 };
 
-if (!isValidEntry(target)) {
-  throw new Error(`Target must be either lambda or server`);
+if (!isValidEntry(entry)) {
+  throw new Error(`Entry must be either lambda or server`);
 }
 
+const entryPoint = (
+  {
+    server: `../src/server/server.ts`,
+    lambda: `../src/server/lambda.ts`,
+  } as const satisfies Record<ValidEntry, string>
+)[entry];
+
 esbuild.build({
-  entryPoints: [join(__dirname, `../src/server/${target}.ts`)],
+  entryPoints: [join(__dirname, entryPoint)],
   bundle: true,
   minify: false,
   outdir: 'dist',

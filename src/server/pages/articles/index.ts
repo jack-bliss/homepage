@@ -8,14 +8,18 @@ export const articles = Router();
 
 articles.get('/:slug', async (req, res, next) => {
   const { slug } = req.params;
-  if (slug.endsWith('.png')) {
+  if (slug.includes('.')) {
     return next();
   }
-  const page = await renderMarkdownFromAsset(
-    fileNameToTitle(slug),
-    `articles/${slug}.md`,
-  );
-  res.type('text/html').send(page);
+  try {
+    const page = await renderMarkdownFromAsset(
+      fileNameToTitle(slug),
+      `articles/${slug}.md`,
+    );
+    res.type('text/html').send(page);
+  } catch (error) {
+    next(error);
+  }
 });
 
 articles.get('/', (req, res) => {

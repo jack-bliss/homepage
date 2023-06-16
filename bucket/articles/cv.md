@@ -4,15 +4,15 @@
 [PDF version](/cv.pdf)
 
 ## Summary
-Experienced full-stack web developer with expertise spanning from HTML and CSS to DevOps and infrastructure deployments. Demonstrated proficiency with a variety of frontend frameworks. Well-versed in Node.js for developing backend services, packages, and command line utilities. Experienced user of SQL and NoSQL databases, including realtime technologies. Passionate about holistic approaches to creating exceptional user experiences. Habitual in staying up-to-date with emerging technologies and best practices to deliver high-quality results. Experienced in both nurturing junior developers and effectively coordinating outsourced freelancers to deliver successful projects.
+Experienced full-stack web developer with expertise spanning HTML/CSS, frontend frameworks, API design/development, and DevOps and infrastructure deployments. Technical leader with clear vision and balanced understanding. Drives progress in internal processes and tooling to support productivity across the organisation. Delivers features and products end-to-end, from conception and design through to documentation and sunset planning. Passionate about holistic approaches to creating exceptional user experiences. Habitual in staying up-to-date with emerging technologies and best practices to deliver high-quality results. Mentoring and nurturing junior developers and effectively coordinating outsourced freelancers.
 
 ### Battlefy - battlefy.com - senior engineer
 *Sep 2018 - Apr 2023*
-* Joined the esports platform as a software engineer, promoted to tech lead after 12 months and to senior after another 20 months
+* Promoted to tech lead after 12 months and to senior after another 20 months
 * Wide range of roles and responsibilities - platform work using legacy codebase, client work to specification, and core engine work improving developer tools and processes
-* Required seamless transition between independent thought leadership and meticulous execution to meet tight deadlines
-* Mid-sized company meant that communication across the business was vital, coordinating with sales and client success teams to maximise revenue
-* TypeScript, React, angular.js, express, MongoDB, postgres, AWS Lambda, GitHub actions, Firebase, PayPal, AWS CloudSearch, AWS Elastic Beanstalk, Terraform, AWS CDK are just some of the technologies used
+* Seamless transition between independent thought leadership and meticulous execution to meet tight deadlines
+* Bridged gap between sales and product teams enabling outstanding client success metrics and key results
+* TypeScript, React, angular.js, express, MongoDB, postgres, GitHub actions, Firebase, PayPal, wide range of AWS services and infrastructure-as-code
 
 ### Campus Society - defunct - frontend engineer
 *Aug 2017 - Sep 2018*
@@ -29,20 +29,22 @@ Experienced full-stack web developer with expertise spanning from HTML and CSS t
 
 ### Campus Society - Campus Books
 * Realtime collaborative application for annotating textbooks
-* Users can read academic textbooks online, and add annotations to passages
-* Users can share their annotations with classmates or other users anywhere in the world
-* Users can create threaded comments on annotations to facilitate discussion
+* Users can read academic textbooks online, and add annotations to passages, and share their annotations with classmates or other users around the world
+* Up-front licensing cost for textbooks required flawless execution - finished feature greatly contributed to user acquisition and retention
+
 
 ### Battlefy - Ticket Kit
 * Part of the “kit” series of projects, internal developer-facing products designed to ease creation of a variety of user experiences
 * End-to-end product design and development, including admin UIs for managing tickets, user flows for purchasing tickets, and a code package for integrating with the ticket system
 * Backed by PayPal for globally accepting payments and refunds
+* Enabled premium tournament registrations, unblocking client deals and new revenue streams
+
 
 ### Battlefy - Tournament Structure
-* Revamped approach to modelling tournaments and brackets
 * Battlefy’s legacy platform had a few well-supported formats, but premium publisher clients required more complex formats for latest-trend games like Apex Legends and Teamfight Tactics
-* Designed and developed a new codebase based on graph theory and finite state machines that could support arbitrary formats and game modes
+* Revamped approach based on graph theory/finite state machines unblocked new client deals and kept Battlefy at the forefront of the industry
 * Scalable design principles and strong documentation necessary to ensure the tool receives continued support after my departure
+
 
 ### Battlefy - Hearthstone Masters
 * Close working relationship with one of Battlefy’s largest clients, Blizzard

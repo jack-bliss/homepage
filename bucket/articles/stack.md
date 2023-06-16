@@ -30,7 +30,7 @@ For storing assets, we create a bucket and deployment so we can easily sync file
 
 ```
 // from the Stack constructor
-declate const context: Construct;
+declare const context: Construct;
 
 // props when creating the app
 const appDomainName = 'jackbliss.co.uk'; // base URL

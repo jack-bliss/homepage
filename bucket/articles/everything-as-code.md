@@ -4,6 +4,8 @@
 
 The code we write never exists in a vacuum. It needs to be deployed, tested, and maintained. Each of these shares concern with the code, and following the principle of separation by concern, they should not be separated from the code. This means that they should be versioned, tested, and deployed alongside the code. We're already used to tests as code - it's hard to imagine a useful test suite that ISN'T code, but infrastructure and documentation are often overlooked.
 
+![Neo sees the matrix](/articles/the-matrix.png)
+
 ## Infrastructure as code
 
 One of the most common implementations of infrastructure as code is Docker, which encodes the environment configuration in a single, highly portable file that can launch code into a container. However, we can go a step further with tools like Terraform or CloudFormation, which allow us to define entire infrastructure stacks, including dockerised containers.

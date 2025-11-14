@@ -1,42 +1,35 @@
-import {
-  aws_s3 as s3,
-  RemovalPolicy,
-  aws_s3_deployment as s3_deployment,
-} from 'aws-cdk-lib';
-import { ISource } from 'aws-cdk-lib/aws-s3-deployment';
+import { Duration, RemovalPolicy, aws_s3 as s3 } from 'aws-cdk-lib';
+
 import { Construct } from 'constructs';
 
-export function createBucket({
-  context,
-  id,
-  appDomainName,
-  sources,
-}: {
-  context: Construct;
+type CreateBucketProps = {
+  scope: Construct;
   id: string;
-  appDomainName: string;
-  sources: ISource[];
-}) {
-  const bucket = new s3.Bucket(context, `${id}_S3`, {
-    bucketName: `${appDomainName}.assets`,
+  bucketName: string;
+  versioned?: boolean;
+};
+
+export function createBucket({
+  scope,
+  id,
+  bucketName,
+  versioned = false,
+}: CreateBucketProps) {
+  const expireOldVersions: s3.LifecycleRule = {
+    noncurrentVersionExpiration: Duration.days(30),
+    noncurrentVersionsToRetain: 3,
+  };
+  const bucket = new s3.Bucket(scope, `${id}_Bucket`, {
+    bucketName,
     blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
     enforceSSL: true,
     removalPolicy: RemovalPolicy.DESTROY,
     autoDeleteObjects: true,
+    lifecycleRules: [expireOldVersions],
+    versioned: Boolean(versioned),
   });
-
-  const deployment = new s3_deployment.BucketDeployment(
-    context,
-    `${id}_BucketDeployment`,
-    {
-      destinationBucket: bucket,
-      sources,
-      prune: false,
-    },
-  );
 
   return {
     bucket,
-    deployment,
   };
 }

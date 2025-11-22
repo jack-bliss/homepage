@@ -4,15 +4,11 @@ import {
   Stack,
   StackProps,
   CfnOutput,
-  aws_cloudfront,
-  aws_cloudfront_origins,
+  aws_cloudfront as cloudfront,
+  aws_lambda as lambda,
 } from 'aws-cdk-lib';
 import { Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { join } from 'path';
-import { createNodejsFunction } from './resources/lambda';
-import { createDistribution } from './resources/cloudfront';
-import { createARecord } from './resources/route-53';
-import { createBucket } from './resources/s3';
 import { cloudfrontWebsite } from './coordinated/cloudfront-website';
 
 type RoutingProps = {
@@ -34,14 +30,34 @@ export class CdkStack extends Stack {
     // targets base domain
     const appDomainName = routingProps.domain;
 
+    const originRequest = new cloudfront.experimental.EdgeFunction(
+      this,
+      'OriginRequestLambda',
+      {
+        runtime: lambda.Runtime.NODEJS_24_X,
+        handler: 'index.handler',
+        code: lambda.Code.fromAsset(
+          join(__dirname, '../src/html-replace-lambda'),
+        ),
+      },
+    );
+
     const site = cloudfrontWebsite({
-      scope,
+      scope: this,
       id,
       appDomainName,
       stackName: 'jackbliss_homepage',
       certificateArn: routingProps.certificateArn,
       hostedZoneId: routingProps.hostedZoneId,
-      domain: routingProps.hostedZoneId,
+      domain: routingProps.domain,
+      sources: [Source.asset('./bucket')],
+      edgeLambdas: [
+        {
+          functionVersion: originRequest.currentVersion,
+          eventType: cloudfront.LambdaEdgeEventType.ORIGIN_REQUEST,
+          includeBody: false,
+        },
+      ],
     });
 
     new CfnOutput(this, `CloudFrontDistribution`, {

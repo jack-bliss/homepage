@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+  <title>Stack</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/reset.css" />
+  <link rel="stylesheet" href="/bundles/article.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+</head>
+
+<body>
+  <div id="wrapper">
+    <h1 id="deploying-apps-with-cdk" tabindex="-1">Deploying apps with CDK</h1>
+<p><div class="table-of-contents"><ul><li><a href="#deploying-apps-with-cdk">Deploying apps with CDK</a><ul><li><a href="#pre-requisites">Pre-requisites</a></li><li><a href="#lambda">Lambda</a><ul><li><a href="#s3-bucket">S3 bucket</a></li><li><a href="#the-lambda-function-itself">The lambda function itself</a></li><li><a href="#cloudfront-distribution">CloudFront distribution</a></li><li><a href="#route53">Route53</a></li><li><a href="#limitations">Limitations</a></li></ul></li></ul></li></ul></div></p>
+<p><a href="https://aws.amazon.com/cdk/">AWS Cloud Development Kit (CDK)</a> is a code framework for deploying apps through AWS CloudFormation. The main reason I like CDK is that you define your infrastructure using code, which means it’s easy to connect things and generate settings programmatically.</p>
+<h2 id="pre-requisites" tabindex="-1">Pre-requisites</h2>
+<p>Before creating any apps, we need a URL to deploy them to. I have a Route 53 hosted zone for which I’ve pre-generated a single, catch-all SSL certificate. You can generate a new certificate for each application if you prefer.</p>
+<h2 id="lambda" tabindex="-1">Lambda</h2>
+<p><img src="/articles/lambda.png" alt="Lambda function architecture"></p>
+<ul>
+<li>Code is deployed as the infrastructure is deployed</li>
+<li>Uses a public web URL and a CloudFront distribution for public access</li>
+<li>Pros: very cheap for low volume, simple to deploy and manage</li>
+<li>Cons: not as cost-efficient at scale, app size limits, cold start</li>
+</ul>
+<p>The app will create the following:</p>
+<ol>
+<li>S3 bucket containing assets</li>
+<li>AWS Lambda function running node</li>
+<li>CloudFront distribution for caching</li>
+<li>Route53 A-Record for a domain</li>
+</ol>
+<h3 id="s3-bucket" tabindex="-1">S3 bucket</h3>
+<p>For storing assets, we create a bucket and deployment so we can easily sync files from our source code into the bucket:</p>
+<pre class="hljs"><code><span class="hljs-comment">// from the Stack constructor</span>
+<span class="hljs-keyword">declare</span> <span class="hljs-keyword">const</span> <span class="hljs-variable constant_">context</span>: Construct;
+
+<span class="hljs-comment">// props when creating the app</span>
+<span class="hljs-keyword">const</span> <span class="hljs-variable constant_">appDomainName</span> = <span class="hljs-string">&#x27;jackbliss.co.uk&#x27;</span>; <span class="hljs-comment">// base URL</span>
+<span class="hljs-keyword">const</span> <span class="hljs-variable constant_">id</span>: String = <span class="hljs-string">&#x27;Homepage&#x27;</span>;
+
+<span class="hljs-comment">// can be hard-coded or a prop when creating the stack</span>
+<span class="hljs-keyword">const</span> <span class="hljs-variable constant_">sources</span> = [Source.<span class="hljs-title function_ invoke__">asset</span>(<span class="hljs-string">&#x27;./bucket&#x27;</span>)];
+
+<span class="hljs-keyword">const</span> <span class="hljs-variable constant_">bucket</span> = <span class="hljs-keyword">new</span> s3.<span class="hljs-title function_ invoke__">Bucket</span>(context, `${id}_S3`, {
+  <span class="hljs-attr">bucketName</span>: `${appDomainName}.assets`,
+  <span class="hljs-attr">blockPublicAccess</span>: s3.BlockPublicAccess.BLOCK_ALL,
+  <span class="hljs-attr">enforceSSL</span>: <span class="hljs-literal">true</span>,
+  <span class="hljs-attr">removalPolicy</span>: RemovalPolicy.DESTROY,
+  <span class="hljs-attr">autoDeleteObjects</span>: <span class="hljs-literal">true</span>,
+});
+
+<span class="hljs-keyword">const</span> <span class="hljs-variable constant_">deployment</span> = <span class="hljs-keyword">new</span> s3_deployment.<span class="hljs-title function_ invoke__">BucketDeployment</span>(
+  context,
+  `${id}_BucketDeployment`,
+  {
+    <span class="hljs-attr">destinationBucket</span>: bucket,
+    sources,
+    <span class="hljs-attr">prune</span>: <span class="hljs-literal">false</span>,
+  },
+);
+</code></pre>
+<h3 id="the-lambda-function-itself" tabindex="-1">The lambda function itself</h3>
+<p>Next, we add a Lambda function to handle requests. The function needs permission to access the asset bucket, as well as a URL so it can be publically called:</p>
+<pre class="hljs"><code><span class="hljs-keyword">const</span> <span class="hljs-variable constant_">entry</span> = <span class="hljs-string">&#x27;./src/server/lambda.ts&#x27;</span>;
+
+<span class="hljs-keyword">const</span> <span class="hljs-variable constant_">nodejsFunction</span> = <span class="hljs-keyword">new</span> lambda_nodejs.<span class="hljs-title function_ invoke__">NodejsFunction</span>(
+  context,
+  `${id}_Lambda`,
+  {
+    <span class="hljs-attr">functionName</span>: `${id}_HttpService`,
+    <span class="hljs-attr">handler</span>: <span class="hljs-string">&#x27;handler&#x27;</span>,
+    entry,
+    <span class="hljs-attr">memorySize</span>: <span class="hljs-number">1024</span>,
+    <span class="hljs-attr">runtime</span>: aws_lambda.Runtime.NODEJS_18_X,
+    <span class="hljs-attr">logRetention</span>: <span class="hljs-number">14</span>, // days
+    <span class="hljs-attr">timeout</span>: Duration.<span class="hljs-title function_ invoke__">seconds</span>(<span class="hljs-number">300</span>),
+    <span class="hljs-attr">bundling</span>: {
+      <span class="hljs-attr">minify</span>: <span class="hljs-literal">true</span>,
+      <span class="hljs-attr">externalModules</span>: [<span class="hljs-string">&#x27;aws-sdk&#x27;</span>], // these are already available in the Lambda environment
+      <span class="hljs-attr">loader</span>: {
+        <span class="hljs-string">&#x27;.html&#x27;</span>: <span class="hljs-string">&#x27;text&#x27;</span>, // <span class="hljs-keyword">for</span> convenience
+      },
+    },
+    <span class="hljs-attr">environment</span>: {
+      <span class="hljs-attr">NODE_ENV</span>: <span class="hljs-string">&#x27;production&#x27;</span>,
+      <span class="hljs-attr">BUCKET</span>: bucket.bucketName,
+    },
+  },
+);
+
+<span class="hljs-comment">// give it a public URL</span>
+<span class="hljs-keyword">const</span> <span class="hljs-variable constant_">functionUrl</span> = nodejsFunction.<span class="hljs-title function_ invoke__">addFunctionUrl</span>({
+  <span class="hljs-attr">authType</span>: aws_lambda.FunctionUrlAuthType.NONE,
+});
+
+<span class="hljs-comment">// give it access to the bucket</span>
+nodejsFunction.<span class="hljs-title function_ invoke__">addToRolePolicy</span>(
+  <span class="hljs-keyword">new</span> iam.<span class="hljs-title function_ invoke__">PolicyStatement</span>({
+    <span class="hljs-attr">actions</span>: [<span class="hljs-string">&#x27;s3:GetObject&#x27;</span>, <span class="hljs-string">&#x27;s3:PutObject&#x27;</span>],
+    <span class="hljs-attr">resources</span>: [bucket.bucketArn + <span class="hljs-string">&#x27;/*&#x27;</span>],
+  }),
+);
+nodejsFunction.<span class="hljs-title function_ invoke__">addToRolePolicy</span>(
+  <span class="hljs-keyword">new</span> iam.<span class="hljs-title function_ invoke__">PolicyStatement</span>({
+    <span class="hljs-attr">actions</span>: [<span class="hljs-string">&#x27;s3:ListBucket&#x27;</span>],
+    <span class="hljs-attr">resources</span>: [bucket.bucketArn],
+  }),
+);
+</code></pre>
+<h3 id="cloudfront-distribution" tabindex="-1">CloudFront distribution</h3>
+<p>Now that we have something to cache, we can create the distribution.</p>
+<pre class="hljs"><code><span class="hljs-comment">// provided when creating the stack</span>
+delcare <span class="hljs-keyword">const</span> <span class="hljs-attribute">certificateArn</span>: <span class="hljs-built_in">string</span>;
+
+<span class="hljs-comment">// get domainName required by cf origin</span>
+<span class="hljs-keyword">const</span> functionApiUrl = Fn.select(<span class="hljs-number">1</span>, Fn.split(<span class="hljs-string">&#x27;://&#x27;</span>, functionUrl.url));
+<span class="hljs-keyword">const</span> functionDomainName = Fn.select(<span class="hljs-number">0</span>, Fn.split(<span class="hljs-string">&#x27;/&#x27;</span>, functionApiUrl));
+<span class="hljs-keyword">const</span> origin = <span class="hljs-keyword">new</span> origins.HttpOrigin(functionDomainName);
+
+<span class="hljs-keyword">const</span> distribution = <span class="hljs-keyword">new</span> cloudfront.Distribution(
+  scope,
+  <span class="hljs-string">`<span class="hljs-subst">${id}</span>_Cloudfront`</span>,
+  {
+    <span class="hljs-attribute">comment</span>: <span class="hljs-string">`<span class="hljs-subst">${stackName}</span> <span class="hljs-subst">${id}</span> cache behaviour`</span>,
+    <span class="hljs-attribute">defaultBehavior</span>: {
+      origin,
+      <span class="hljs-attribute">allowedMethods</span>: cloudfront.AllowedMethods.ALLOW_ALL,
+      <span class="hljs-attribute">cachePolicy</span>: <span class="hljs-keyword">new</span> cloudfront.CachePolicy(
+        scope,
+        <span class="hljs-string">`<span class="hljs-subst">${id}</span>_CachePolicy`</span>,
+        {
+          <span class="hljs-attribute">defaultTtl</span>: Duration.seconds(<span class="hljs-number">10</span>), <span class="hljs-comment">// can adjust these as desired</span>
+          <span class="hljs-attribute">minTtl</span>: Duration.seconds(<span class="hljs-number">0</span>),
+          <span class="hljs-attribute">maxTtl</span>: Duration.hours(<span class="hljs-number">1</span>),
+        },
+      ),
+    },
+    <span class="hljs-attribute">domainNames</span>: [appDomainName],
+    <span class="hljs-attribute">certificate</span>: certificatemanager.Certificate.fromCertificateArn(
+      scope,
+      <span class="hljs-string">`<span class="hljs-subst">${id}</span>_CloudFront_CertificateReference`</span>,
+      certificateArn,
+    ),
+  },
+);
+</code></pre>
+<h3 id="route53" tabindex="-1">Route53</h3>
+<p>Finally, we need to create a DNS record so that the app can be accessed by a domain name:</p>
+<pre class="hljs"><code><span class="hljs-comment">// provided when creating the stack</span>
+<span class="hljs-keyword">declare</span> <span class="hljs-keyword">const</span> <span class="hljs-attr">hostedZoneId</span>: <span class="hljs-built_in">string</span>;
+<span class="hljs-keyword">declare</span> <span class="hljs-keyword">const</span> <span class="hljs-attr">zoneName</span>: <span class="hljs-built_in">string</span>;
+
+<span class="hljs-keyword">new</span> route53.<span class="hljs-title class_">ARecord</span>(context, <span class="hljs-string">`<span class="hljs-subst">${id}</span>_CDN_ARecord`</span>, {
+  <span class="hljs-attr">zone</span>: route53.<span class="hljs-property">HostedZone</span>.<span class="hljs-title function_">fromHostedZoneAttributes</span>(
+    context,
+    <span class="hljs-string">`<span class="hljs-subst">${id}</span>_R53_HostedZone`</span>,
+    {
+      hostedZoneId,
+      zoneName,
+    },
+  ),
+  <span class="hljs-attr">recordName</span>: appDomainName,
+  <span class="hljs-attr">target</span>: route53.<span class="hljs-property">RecordTarget</span>.<span class="hljs-title function_">fromAlias</span>(
+    <span class="hljs-keyword">new</span> route53Targets.<span class="hljs-title class_">CloudFrontTarget</span>(distribution),
+  ),
+});
+</code></pre>
+<h3 id="limitations" tabindex="-1">Limitations</h3>
+<p>The lambda function has a public URL, which means it can be called by anyone, and bypass the CloudFront distribution. This is a security risk, but it’s also a cost risk. If someone were to call the function repeatedly, it could rack up a lot of costs. One way to address this is to restrict access to the function URL to users with the correct IAM_ROLE, and then use a separate lambda@edge function to sign requests to the Lambda that come through CloudFront. <a href="https://medium.com/@dario_26152/restrict-access-to-lambda-functionurl-to-cloudfront-using-aws-iam-988583834705">This article</a> has more details.</p>
+
+  </div>
+</body>
+
+</html>

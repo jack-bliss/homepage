@@ -13,7 +13,8 @@ export const createDistribution = ({
   certificateArn,
   aliases,
   stackName,
-  defaultRootObject,
+  defaultRootObject = 'index.html',
+  edgeLambdas = [],
 }: {
   scope: Construct;
   id: string;
@@ -21,7 +22,8 @@ export const createDistribution = ({
   aliases: string[];
   origin: cloudfront.IOrigin;
   stackName: string;
-  defaultRootObject: string;
+  defaultRootObject?: string;
+  edgeLambdas?: cloudfront.EdgeLambda[];
 }) => {
   const distribution = new cloudfront.Distribution(
     scope,
@@ -35,6 +37,7 @@ has aliases [${aliases.join(', ')}]
       defaultRootObject,
       defaultBehavior: {
         origin,
+        edgeLambdas,
         allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
         cachePolicy: new cloudfront.CachePolicy(
           scope,

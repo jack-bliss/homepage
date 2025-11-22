@@ -7,7 +7,6 @@ import {
   HOSTED_ZONE_ID,
   PROJECT_NAME,
 } from './app';
-import { join } from 'path';
 
 const app = new App();
 
@@ -20,7 +19,7 @@ new CdkStack(
     domain: DOMAIN,
   },
   {
-    description: '',
+    description: 'Jack Bliss Home Page',
     env: {
       region: 'eu-west-2',
     },

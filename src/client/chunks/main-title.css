@@ -1,14 +1,24 @@
-h1.main-title {
-  --shadow-offset: 5px;
+header {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 150px 0 40px;
+
+  background: linear-gradient(30deg, rgba(0, 32, 48, 1) 0%, rgba(45, 27, 79, 1) 100%);
+}
+
+h1 {
+  --shadow-offset: 10px;
   --a-color: var(--primary);
   --b-color: var(--secondary);
   --b-multiplier: -1;
 
-  width: 100vw;
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  font-family: "Irish Grover", system-ui;
+  font-weight: 400;
+  font-style: normal;
 
   font-size: 200px;
   font-weight: normal;

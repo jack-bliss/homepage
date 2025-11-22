@@ -1,8 +1,24 @@
-import { Construct } from 'constructs';
 import { createARecord } from '../resources/route-53';
 import { createBucket } from '../resources/s3';
 import { createDistribution } from '../resources/cloudfront';
-import { aws_cloudfront_origins as origins } from 'aws-cdk-lib';
+import {
+  Stack,
+  aws_cloudfront_origins as origins,
+  aws_s3_deployment as s3_deployment,
+  aws_cloudfront as cloudfront,
+} from 'aws-cdk-lib';
+
+type CloudfrontWebsiteConfig = {
+  scope: Stack;
+  id: string;
+  appDomainName: string;
+  stackName: string;
+  certificateArn: string;
+  hostedZoneId: string;
+  domain: string;
+  sources: s3_deployment.ISource[];
+  edgeLambdas?: cloudfront.EdgeLambda[];
+};
 
 export function cloudfrontWebsite({
   scope,
@@ -12,32 +28,26 @@ export function cloudfrontWebsite({
   certificateArn,
   hostedZoneId,
   domain,
-}: {
-  scope: Construct;
-  id: string;
-  appDomainName: string;
-  stackName: string;
-  certificateArn: string;
-  hostedZoneId: string;
-  domain: string;
-}) {
+  edgeLambdas,
+  sources,
+}: CloudfrontWebsiteConfig) {
   const { bucket } = createBucket({
     scope,
     id,
     bucketName: `${appDomainName}.assets`,
     versioned: true,
+    sources,
   });
 
   const { distribution } = createDistribution({
     scope,
     id,
-    origin: new origins.S3Origin(bucket, {
-      originPath: stackName,
-    }),
+    origin: origins.S3BucketOrigin.withOriginAccessControl(bucket),
     certificateArn,
     aliases: [appDomainName, `www.${appDomainName}`],
     stackName,
     defaultRootObject: 'index.html',
+    edgeLambdas,
   });
 
   const { aRecord: wwwARecord } = createARecord({

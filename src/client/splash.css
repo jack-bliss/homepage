@@ -2,3 +2,22 @@
 @import './theme/semantic.css';
 @import './chunks/main-title.css';
 @import './chunks/body.css';
+@import './chunks/links.css';
+
+main {
+  width: min(800px, calc(100vw - 20px));
+  margin: 60px auto;
+}
+
+h2 {
+  padding: 32px 0;
+  margin: 120px 0;
+  font-size: 32px;
+  text-align: center;
+  position: relative;
+  background: radial-gradient(circle, rgba(58, 172, 180, 1) 0%, rgba(253, 29, 29, 1) 50%, rgba(252, 176, 69, 1) 100%);
+}
+
+p {
+  margin: 0 0 16px;
+}

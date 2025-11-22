@@ -1,8 +1,10 @@
-import { getAsset, renderTemplate } from '../../services';
+import { renderTemplate } from '../render-template';
 import MD from 'markdown-it';
 import hljs from 'highlight.js';
 import markdownItAnchor from 'markdown-it-anchor';
 import markdownItTableOfContents from 'markdown-it-table-of-contents';
+import { readFile } from 'fs/promises';
+import { join } from 'path';
 
 hljs.registerLanguage(
   'javascript',
@@ -29,25 +31,13 @@ md.use(markdownItTableOfContents, {
 });
 
 export async function renderMarkdown(title: string, markdown: string) {
-  const template = await getAsset('markdown-template.html');
+  const template = await readFile(
+    join(__dirname, '../articles/article-template.html'),
+    'utf-8',
+  );
   const result = md.render(markdown);
   return renderTemplate(template.toString(), {
     title,
     body: result,
-  });
-}
-
-export async function renderMarkdownFromAsset(
-  title: string,
-  path: string,
-) {
-  const [asset, template] = await Promise.all([
-    getAsset(path),
-    getAsset('markdown-template.html'),
-  ]);
-  const body = md.render(asset.toString('utf-8'));
-  return renderTemplate(template.toString(), {
-    title,
-    body,
   });
 }

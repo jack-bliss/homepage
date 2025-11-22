@@ -4,15 +4,12 @@ import {
   Stack,
   StackProps,
   CfnOutput,
-  aws_cloudfront,
-  aws_cloudfront_origins,
+  aws_cloudfront as cloudfront,
+  aws_lambda as lambda,
 } from 'aws-cdk-lib';
 import { Source } from 'aws-cdk-lib/aws-s3-deployment';
 import { join } from 'path';
-import { createNodejsFunction } from './resources/lambda';
-import { createDistribution } from './resources/cloudfront';
-import { createARecord } from './resources/route-53';
-import { createBucket } from './resources/s3';
+import { cloudfrontWebsite } from './coordinated/cloudfront-website';
 
 type RoutingProps = {
   certificateArn: string;
@@ -33,57 +30,42 @@ export class CdkStack extends Stack {
     // targets base domain
     const appDomainName = routingProps.domain;
 
-    // create storage bucket that can be read from and written to
-    const { bucket } = createBucket({
-      context: this,
+    const originRequest = new cloudfront.experimental.EdgeFunction(
+      this,
+      'OriginRequestLambda',
+      {
+        runtime: lambda.Runtime.NODEJS_24_X,
+        handler: 'index.handler',
+        code: lambda.Code.fromAsset(
+          join(__dirname, '../src/html-replace-lambda'),
+        ),
+      },
+    );
+
+    const site = cloudfrontWebsite({
+      scope: this,
       id,
       appDomainName,
-      sources: [Source.asset('./bucket')],
-    });
-
-    // create actual lambda function that implements server (HttpService)
-    const { nodejsFunction, functionUrl } = createNodejsFunction({
-      context: this,
-      id,
-      entry: join(__dirname, '../src/server/lambda.ts'),
-      bucket,
-    });
-
-    // get domainName required by cloudfront
-    const functionApiUrl = Fn.select(1, Fn.split('://', functionUrl.url));
-    const functionDomainName = Fn.select(0, Fn.split('/', functionApiUrl));
-
-    // create cloudfront distribution
-    const { distribution } = createDistribution({
-      context: this,
-      id,
-      domainName: functionDomainName,
+      stackName: 'jackbliss_homepage',
       certificateArn: routingProps.certificateArn,
-      aliases: [appDomainName],
-      origin: new aws_cloudfront_origins.HttpOrigin(functionDomainName),
-    });
-
-    // create a-record cloudfront distribution
-    createARecord({
-      context: this,
-      id,
       hostedZoneId: routingProps.hostedZoneId,
-      zoneName: routingProps.domain,
-      recordName: appDomainName,
-      distribution,
+      domain: routingProps.domain,
+      sources: [Source.asset('./bucket')],
+      edgeLambdas: [
+        {
+          functionVersion: originRequest.currentVersion,
+          eventType: cloudfront.LambdaEdgeEventType.ORIGIN_REQUEST,
+          includeBody: false,
+        },
+      ],
     });
 
     new CfnOutput(this, `CloudFrontDistribution`, {
-      value: distribution.distributionId,
+      value: site.distribution.distributionId,
     });
-
-    new CfnOutput(this, `LambdaFunctionUrl`, {
-      value: functionUrl.url,
+    new CfnOutput(this, `AssetsBucketName`, {
+      value: site.bucket.bucketName,
     });
-    new CfnOutput(this, `LambdaLogGroupUrl`, {
-      value: `https://eu-west-2.console.aws.amazon.com/cloudwatch/home?region=eu-west-2#logsV2:log-groups/log-group/$252Faws$252Flambda$252F${nodejsFunction.functionName}`,
-    });
-    new CfnOutput(this, `AssetsBucketName`, { value: bucket.bucketName });
     new CfnOutput(this, `PublicUrl`, {
       value: `https://${appDomainName}`,
     });

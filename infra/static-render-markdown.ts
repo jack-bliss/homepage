@@ -1,25 +1,36 @@
-import { renderMarkdown } from '../src/server/middleware/render-markdown';
+import { renderMarkdown } from '../src/render-markdown';
 
 import { program } from 'commander';
-import { getFromLocal } from '../src/server/services/get-asset/get-from-local';
 import { join } from 'path';
-import { writeFile } from 'fs/promises';
+import { readFile, writeFile } from 'fs/promises';
+import { fileNameToTitle } from '../src/render-markdown/file-name-to-title';
 
 program.requiredOption(
   '--file <path>',
-  'File name, relative to the bucket directory',
+  'File name, relative to the src root',
+);
+program.requiredOption(
+  '--out <path>',
+  'Output path, relative to the bucket directory',
 );
 
 program.parse();
 
-const { file } = program.opts() as {
+const { file, out } = program.opts() as {
   file: string;
+  out: string;
 };
 
 async function main() {
-  const markdown = await getFromLocal(join('../bucket', file));
-  const result = await renderMarkdown(file, markdown.toString());
-  await writeFile(`./bucket/${file.replace('.md', '.html')}`, result);
+  const markdown = await readFile(
+    join(__dirname, '../src', file),
+    'utf-8',
+  );
+  const result = await renderMarkdown(
+    fileNameToTitle(file),
+    markdown.toString(),
+  );
+  await writeFile(join(__dirname, `../bucket/${out}`), result);
 }
 
 main()

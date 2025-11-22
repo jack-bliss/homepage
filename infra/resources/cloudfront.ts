@@ -1,46 +1,57 @@
 import {
   Duration,
-  aws_cloudfront as cloudfront,
   aws_certificatemanager as certificatemanager,
+  aws_cloudfront as cloudfront,
 } from 'aws-cdk-lib';
+
 import { Construct } from 'constructs';
 
 export const createDistribution = ({
-  context,
+  scope,
   id,
-  domainName,
+  origin,
   certificateArn,
   aliases,
-  origin,
+  stackName,
+  defaultRootObject = 'index.html',
+  edgeLambdas = [],
 }: {
-  context: Construct;
+  scope: Construct;
   id: string;
-  domainName: string;
   certificateArn: string;
   aliases: string[];
   origin: cloudfront.IOrigin;
+  stackName: string;
+  defaultRootObject?: string;
+  edgeLambdas?: cloudfront.EdgeLambda[];
 }) => {
   const distribution = new cloudfront.Distribution(
-    context,
+    scope,
     `${id}_Cloudfront`,
     {
-      comment: `${domainName} ${id} cache behaviour`,
+      comment: `
+${stackName} ${id} cache behaviour, 
+uses certificate with arn ${certificateArn}, 
+has aliases [${aliases.join(', ')}]
+`,
+      defaultRootObject,
       defaultBehavior: {
         origin,
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+        edgeLambdas,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
         cachePolicy: new cloudfront.CachePolicy(
-          context,
+          scope,
           `${id}_CachePolicy`,
           {
             defaultTtl: Duration.seconds(10),
             minTtl: Duration.seconds(0),
-            maxTtl: Duration.hours(1),
+            maxTtl: Duration.minutes(1),
           },
         ),
       },
       domainNames: aliases,
       certificate: certificatemanager.Certificate.fromCertificateArn(
-        context,
+        scope,
         `${id}_CloudFront_CertificateReference`,
         certificateArn,
       ),

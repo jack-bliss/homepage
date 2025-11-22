@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+  <title>Ec2 Fleet With Cdk</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/reset.css" />
+  <link rel="stylesheet" href="/bundles/article.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+</head>
+
+<body>
+  <div id="wrapper">
+    <h1 id="deploying-a-load-balanced-ec2-fleet-with-cdk" tabindex="-1">Deploying a load-balanced EC2 fleet with CDK</h1>
+<p><div class="table-of-contents"><ul><li><a href="#deploying-a-load-balanced-ec2-fleet-with-cdk">Deploying a load-balanced EC2 fleet with CDK</a><ul><li><a href="#pre-requisites">Pre-requisites</a></li><li><a href="#what-we%E2%80%99ll-build">What we’ll build</a><ul><li><a href="#networking-to-the-fleet">Networking to the fleet</a></li><li><a href="#deploying-code-to-the-fleet">Deploying code to the fleet</a></li></ul></li><li><a href="#creating-the-stack">Creating the stack</a><ul><li><a href="#vpc">VPC</a></li><li><a href="#launch-template">Launch template</a></li><li><a href="#s3-buckets">S3 buckets</a></li><li><a href="#ec2-auto-scaling-fleet">EC2 Auto-Scaling Fleet</a></li><li><a href="#application-load-balancer">Application Load Balancer</a></li><li><a href="#codedeploy">CodeDeploy</a></li><li><a href="#codepipeline">CodePipeline</a></li><li><a href="#cloudfront">CloudFront</a></li><li><a href="#route53">Route53</a></li></ul></li><li><a href="#releasing-code">Releasing code</a><ul><li><a href="#contents-of-source-archive%3A">Contents of source archive:</a></li><li><a href="#appspec.yml">appspec.yml</a></li><li><a href="#start-server">start-server</a></li><li><a href="#stop-server">stop-server</a></li><li><a href="#.env-and-server.js">.env and server.js</a></li><li><a href="#release-script">Release script</a></li></ul></li><li><a href="#limitations">Limitations</a></li></ul></li></ul></div></p>
+<p><a href="https://aws.amazon.com/cdk/">AWS Cloud Development Kit (CDK)</a> is a code framework for deploying apps through AWS CloudFormation. In this article, we’ll see a detailed example of how to deploy a load-balanced EC2 fleet using CDK.</p>
+<h2 id="pre-requisites" tabindex="-1">Pre-requisites</h2>
+<p>Before creating any apps, we need a URL to deploy them to. I have a Route 53 hosted zone for which I’ve pre-generated a single, catch-all SSL certificate. You can generate a new certificate for each application if you prefer.</p>
+<h2 id="what-we%E2%80%99ll-build" tabindex="-1">What we’ll build</h2>
+<p><img src="/articles/ec2-fleet.png" alt="EC2 fleet architecture"></p>
+<p>Unlike with a <a href="/articles/stack">NodejsFunction-based infrastructure</a>, the infrastructure is deployed first, and then code is deployed to the fleet in a separate step.</p>
+<p>We will use these resources:</p>
+<ol>
+<li>VPC with public subnets</li>
+<li>Launch template with Security Group</li>
+<li>S3 bucket containing assets</li>
+<li>EC2 autoscaling group</li>
+<li>ApplicationLoadBalancer</li>
+<li>CloudFront distribution for caching</li>
+<li>Route53 A-Record for a domain</li>
+<li>CodePipeline for deploying code</li>
+<li>CodeDeploy for deploying code to the fleet</li>
+<li>Dedicated S3 bucket for storing zipped deployment code</li>
+</ol>
+<h3 id="networking-to-the-fleet" tabindex="-1">Networking to the fleet</h3>
+<ol>
+<li>Route 53 A-Record points to CloudFront</li>
+<li>CloudFront sits in front of an ApplicationLoadBalancer</li>
+<li>ApplicationLoadBalancer sits in front of the EC2 autoscaling group</li>
+</ol>
+<h3 id="deploying-code-to-the-fleet" tabindex="-1">Deploying code to the fleet</h3>
+<ol>
+<li>Zipped source including app-spec and lifecycle scripts is uploaded to S3</li>
+<li>CodePipeline watches the S3 bucket for changes</li>
+<li>When a new source is uploaded, CodePipeline sends the zip file to CodeDeploy</li>
+<li>CodeDeploy deploys the code to the EC2 fleet</li>
+</ol>
+<h2 id="creating-the-stack" tabindex="-1">Creating the stack</h2>
+<h3 id="vpc" tabindex="-1">VPC</h3>
+<p>A VPC is used to isolate the EC2 fleet from the rest of the network. We create a VPC with public subnets.</p>
+<pre class="hljs"><code><span class="hljs-keyword">declare</span> <span class="hljs-keyword">const</span> <span class="hljs-variable constant_">scope</span>: Construct;
+<span class="hljs-keyword">const</span> <span class="hljs-variable constant_">id</span> = <span class="hljs-string">&#x27;MyApp&#x27;</span>;
+
+<span class="hljs-keyword">return</span> <span class="hljs-keyword">new</span> aws_ec2.<span class="hljs-title function_ invoke__">Vpc</span>(scope, `${id}_VPC`, {
+  <span class="hljs-attr">ipAddresses</span>: aws_ec2.IpAddresses.<span class="hljs-title function_ invoke__">cidr</span>(<span class="hljs-string">&#x27;10.0.0.0/16&#x27;</span>),
+  <span class="hljs-attr">availabilityZones</span>: [<span class="hljs-string">&#x27;eu-west-2a&#x27;</span>, <span class="hljs-string">&#x27;eu-west-2b&#x27;</span>, <span class="hljs-string">&#x27;eu-west-2c&#x27;</span>],
+  <span class="hljs-attr">subnetConfiguration</span>: [ // no need <span class="hljs-keyword">for</span> <span class="hljs-keyword">private</span> subnets
+    {
+      <span class="hljs-attr">subnetType</span>: aws_ec2.SubnetType.PUBLIC,
+      <span class="hljs-attr">name</span>: <span class="hljs-string">&#x27;PublicSubnet&#x27;</span>,
+    },
+  ],
+});
+</code></pre>
+<h3 id="launch-template" tabindex="-1">Launch template</h3>
+<p>The launch template defines the size and OS of each EC2 instance. Our template will also include user data to install node/npm and the CodeDeploy agent. It may be tempting to use user data to also install our code and start the app, but this can be troublesome. Instead, we’ll use CodeDeploy for that (this will come later).</p>
+<pre class="hljs"><code><span class="hljs-comment">// role that the EC2 instances will use</span>
+<span class="hljs-keyword">const</span> role = <span class="hljs-keyword">new</span> aws_iam.<span class="hljs-title class_">Role</span>(scope, <span class="hljs-string">`<span class="hljs-subst">${id}</span>_Ec2FleetRole`</span>, {
+  <span class="hljs-attr">assumedBy</span>: <span class="hljs-keyword">new</span> aws_iam.<span class="hljs-title class_">ServicePrincipal</span>(<span class="hljs-string">&#x27;ec2.amazonaws.com&#x27;</span>),
+});
+
+<span class="hljs-comment">// security group to allow traffic into/out of the EC2 instances</span>
+<span class="hljs-keyword">const</span> securityGroup = <span class="hljs-keyword">new</span> aws_ec2.<span class="hljs-title class_">SecurityGroup</span>(
+  scope,
+  <span class="hljs-string">`<span class="hljs-subst">${id}</span>_SecurityGroup`</span>,
+  {
+    vpc,
+  },
+);
+<span class="hljs-comment">// allow SSHing into EC2 instances</span>
+securityGroup.<span class="hljs-title function_">addIngressRule</span>(
+  ec2.<span class="hljs-property">Peer</span>.<span class="hljs-title function_">anyIpv4</span>(),
+  ec2.<span class="hljs-property">Port</span>.<span class="hljs-title function_">tcp</span>(<span class="hljs-number">22</span>),
+  <span class="hljs-string">&#x27;SSH&#x27;</span>,
+);
+<span class="hljs-comment">// N.B., does not allow public HTTP traffic to the server on port 3000</span>
+
+<span class="hljs-comment">// user data for installing node/npm</span>
+<span class="hljs-keyword">const</span> installNode = aws_ec2.<span class="hljs-property">UserData</span>.<span class="hljs-title function_">forLinux</span>();
+<span class="hljs-comment">// `export HOME=/home/ec2-user` is a line you&#x27;ll see a lot in this article</span>
+installNode.<span class="hljs-title function_">addCommands</span>(<span class="hljs-string">`
+export HOME=/home/ec2-user
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.3/install.sh | bash
+. ~/.nvm/nvm.sh
+nvm install 16 # Latest LTS supported by Amazon Linux 2
+`</span>);
+<span class="hljs-comment">// user data for installing CodeDeploy agent</span>
+<span class="hljs-keyword">const</span> installCodeDeployAgent = aws_ec2.<span class="hljs-property">UserData</span>.<span class="hljs-title function_">forLinux</span>();
+installCodeDeployAgent.<span class="hljs-title function_">addCommands</span>(<span class="hljs-string">`
+export HOME=/home/ec2-user
+sudo yum -y install ruby
+sudo yum -y install wget
+cd /home/ec2-user
+wget https://aws-codedeploy-eu-west-2.s3.eu-west-2.amazonaws.com/latest/install
+sudo chmod +x ./install
+sudo ./install auto
+`</span>);
+<span class="hljs-comment">// combine user data</span>
+<span class="hljs-keyword">const</span> userData = <span class="hljs-keyword">new</span> aws_ec2.<span class="hljs-title class_">MultipartUserData</span>();
+userData.<span class="hljs-title function_">addPart</span>(aws_ec2.<span class="hljs-property">MultipartBody</span>.<span class="hljs-title function_">fromUserData</span>(installNode));
+userData.<span class="hljs-title function_">addPart</span>(aws_ec2.<span class="hljs-property">MultipartBody</span>.<span class="hljs-title function_">fromUserData</span>(installCodeDeployAgent));
+
+<span class="hljs-comment">// launch template itself</span>
+<span class="hljs-keyword">const</span> launchTemplate = <span class="hljs-keyword">new</span> aws_ec2.<span class="hljs-title class_">LaunchTemplate</span>(
+  scope,
+  <span class="hljs-string">`<span class="hljs-subst">${id}</span>_LaunchTemplate`</span>,
+  {
+    <span class="hljs-attr">machineImage</span>: aws_ec2.<span class="hljs-property">MachineImage</span>.<span class="hljs-title function_">latestAmazonLinux2</span>(), <span class="hljs-comment">// latest linux 2</span>
+    <span class="hljs-attr">instanceType</span>: aws_ec2.<span class="hljs-property">InstanceType</span>.<span class="hljs-title function_">of</span>( <span class="hljs-comment">// smallest instance type</span>
+      aws_ec2.<span class="hljs-property">InstanceClass</span>.<span class="hljs-property">T2</span>,
+      aws_ec2.<span class="hljs-property">InstanceSize</span>.<span class="hljs-property">NANO</span>,
+    ),
+    <span class="hljs-comment">// use default SSH key</span>
+    <span class="hljs-attr">keyName</span>: <span class="hljs-string">&#x27;Default&#x27;</span>,
+    role,
+    securityGroup,
+    userData,
+  },
+);
+</code></pre>
+<h3 id="s3-buckets" tabindex="-1">S3 buckets</h3>
+<p>We will create two S3 buckets. The first will contain assets for the app, such as images, CSS, and JS. The second will contain zipped source code for deploying to the fleet.</p>
+<pre class="hljs"><code><span class="hljs-comment">// can be hard-coded or a prop when creating the stack</span>
+<span class="hljs-keyword">const</span> sources = [aws_s3_deployment.<span class="hljs-property">Source</span>.<span class="hljs-title function_">asset</span>(<span class="hljs-string">&#x27;./bucket&#x27;</span>)];
+
+<span class="hljs-keyword">const</span> assetBucket = <span class="hljs-keyword">new</span> aws_s3.<span class="hljs-title class_">Bucket</span>(context, <span class="hljs-string">`<span class="hljs-subst">${id}</span>_S3_Assets`</span>, {
+  <span class="hljs-attr">bucketName</span>: <span class="hljs-string">`<span class="hljs-subst">${appDomainName}</span>.assets`</span>,
+  <span class="hljs-attr">blockPublicAccess</span>: aws_s3.<span class="hljs-property">BlockPublicAccess</span>.<span class="hljs-property">BLOCK_ALL</span>,
+  <span class="hljs-attr">enforceSSL</span>: <span class="hljs-literal">true</span>,
+  <span class="hljs-attr">removalPolicy</span>: <span class="hljs-title class_">RemovalPolicy</span>.<span class="hljs-property">DESTROY</span>,
+  <span class="hljs-attr">autoDeleteObjects</span>: <span class="hljs-literal">true</span>,
+});
+
+<span class="hljs-comment">// asset bucket uses auto-deployment to sync a folder of assets directly</span>
+<span class="hljs-keyword">const</span> assetDeployment = <span class="hljs-keyword">new</span> aws_s3_deployment.<span class="hljs-title class_">BucketDeployment</span>(
+  context,
+  <span class="hljs-string">`<span class="hljs-subst">${id}</span>_s3_AssetDeployment`</span>,
+  {
+    <span class="hljs-attr">destinationBucket</span>: bucket,
+    sources,
+    <span class="hljs-attr">prune</span>: <span class="hljs-literal">false</span>,
+  },
+);
+
+<span class="hljs-keyword">const</span> sourceBucket = <span class="hljs-keyword">new</span> aws_s3.<span class="hljs-title class_">Bucket</span>(scope, <span class="hljs-string">`<span class="hljs-subst">${id}</span>_S3_Launch`</span>, {
+  <span class="hljs-attr">bucketName</span>: <span class="hljs-string">`<span class="hljs-subst">${appDomainName}</span>.source`</span>,
+  <span class="hljs-attr">blockPublicAccess</span>: aws_s3.<span class="hljs-property">BlockPublicAccess</span>.<span class="hljs-property">BLOCK_ALL</span>,
+  <span class="hljs-attr">enforceSSL</span>: <span class="hljs-literal">true</span>,
+  <span class="hljs-attr">removalPolicy</span>: <span class="hljs-title class_">RemovalPolicy</span>.<span class="hljs-property">DESTROY</span>,
+  <span class="hljs-attr">autoDeleteObjects</span>: <span class="hljs-literal">true</span>,
+  <span class="hljs-attr">versioned</span>: <span class="hljs-literal">true</span>,
+});
+
+<span class="hljs-comment">// The source bucket gets a CloudWatch trail to watch for changes to the source archive</span>
+<span class="hljs-keyword">const</span> trail = <span class="hljs-keyword">new</span> aws_cloudtrail.<span class="hljs-title class_">Trail</span>(
+  scope,
+  <span class="hljs-string">`<span class="hljs-subst">${id}</span>_SourceArchive_CloudTrail`</span>,
+);
+trail.<span class="hljs-title function_">addS3EventSelector</span>(
+  [
+    {
+      <span class="hljs-attr">bucket</span>: sourceBucket,
+      <span class="hljs-attr">objectPrefix</span>: <span class="hljs-string">&#x27;source.zip&#x27;</span>, <span class="hljs-comment">// needs to match the key defined in CodePipeline</span>
+    },
+  ],
+  {
+    <span class="hljs-attr">readWriteType</span>: aws_cloudtrail.<span class="hljs-property">ReadWriteType</span>.<span class="hljs-property">WRITE_ONLY</span>,
+  },
+);
+
+<span class="hljs-comment">// Give the EC2 fleet read/write access to the asset bucket </span>
+role.<span class="hljs-title function_">addToPrincipalPolicy</span>(
+  <span class="hljs-keyword">new</span> aws_iam.<span class="hljs-title class_">PolicyStatement</span>({
+    <span class="hljs-attr">actions</span>: [<span class="hljs-string">&#x27;s3:GetObject&#x27;</span>, <span class="hljs-string">&#x27;s3:PutObject&#x27;</span>],
+    <span class="hljs-attr">resources</span>: [<span class="hljs-string">`<span class="hljs-subst">${assetBucket.bucketArn}</span>/*`</span>],
+  }),
+);
+role.<span class="hljs-title function_">addToPrincipalPolicy</span>(
+  <span class="hljs-keyword">new</span> aws_iam.<span class="hljs-title class_">PolicyStatement</span>({
+    <span class="hljs-attr">actions</span>: [<span class="hljs-string">&#x27;s3:ListBucket&#x27;</span>],
+    <span class="hljs-attr">resources</span>: [assetBucket.<span class="hljs-property">bucketArn</span>],
+  }),
+);
+
+<span class="hljs-comment">// Give the EC2 fleet read access to the source bucket</span>
+role.<span class="hljs-title function_">addToPrincipalPolicy</span>(
+  <span class="hljs-keyword">new</span> aws_iam.<span class="hljs-title class_">PolicyStatement</span>({
+    <span class="hljs-attr">actions</span>: [<span class="hljs-string">&#x27;s3:GetObject&#x27;</span>],
+    <span class="hljs-attr">resources</span>: [<span class="hljs-string">`<span class="hljs-subst">${sourceBucket.bucketArn}</span>/*`</span>],
+  }),
+);
+
+</code></pre>
+<h3 id="ec2-auto-scaling-fleet" tabindex="-1">EC2 Auto-Scaling Fleet</h3>
+<p>The EC2 fleet is an auto-scaling group. This means that the number of EC2 instances will scale up and down based on the load on the fleet. For the example, we will use a scheduled scaling policy. This means that the number of instances will scale up and down based on the time of day.</p>
+<pre class="hljs"><code><span class="hljs-comment">// create the group itself using the vpc and launch template</span>
+<span class="hljs-keyword">const</span> autoScalingGroup = <span class="hljs-keyword">new </span><span class="hljs-class title_">aws_autoscaling</span>.<span class="hljs-property">AutoScalingGroup</span>(
+  scope,
+  `${id}_AutoscalingGroup`,
+  {
+    vpc, <span class="hljs-comment">// launch EC2 instances into the VPC</span>
+    launchTemplate, <span class="hljs-comment">// how to create the EC2 instances</span>
+    autoScalingGroupName,
+    minCapacity: <span class="hljs-number">3</span>, <span class="hljs-comment">// should be at least as many AZs as you&#x27;re using</span>
+    maxCapacity: <span class="hljs-number">4</span>,
+  },
+);
+
+<span class="hljs-comment">// some sample scaling rules</span>
+autoScalingGroup.<span class="hljs-property">scaleOnSchedule</span>(<span class="hljs-string">&#x27;ScaleUpInMorning&#x27;</span>, {
+  schedule: aws_autoscaling.<span class="hljs-property">Schedule</span>.<span class="hljs-property">cron</span>({ <span class="hljs-built_in">hour</span>: <span class="hljs-string">&#x27;10&#x27;</span>, <span class="hljs-built_in">minute</span>: <span class="hljs-string">&#x27;0&#x27;</span> }), <span class="hljs-comment">// UTC time</span>
+  minCapacity: <span class="hljs-number">4</span>,
+  maxCapacity: <span class="hljs-number">4</span>,
+});
+
+autoScalingGroup.<span class="hljs-property">scaleOnSchedule</span>(<span class="hljs-string">&#x27;ScaleDownAtNight&#x27;</span>, {
+  schedule: aws_autoscaling.<span class="hljs-property">Schedule</span>.<span class="hljs-property">cron</span>({ <span class="hljs-built_in">hour</span>: <span class="hljs-string">&#x27;18&#x27;</span>, <span class="hljs-built_in">minute</span>: <span class="hljs-string">&#x27;0&#x27;</span> }), <span class="hljs-comment">// UTC time</span>
+  minCapacity: <span class="hljs-number">3</span>,
+  maxCapacity: <span class="hljs-number">3</span>,
+});
+</code></pre>
+<h3 id="application-load-balancer" tabindex="-1">Application Load Balancer</h3>
+<p>The application load balancer allows us to route traffic to the EC2 instances.</p>
+<pre class="hljs"><code><span class="hljs-keyword">const</span> applicationLoadBalancer = <span class="hljs-keyword">new</span> aws_elasticloadbalancingv2.<span class="hljs-title class_">ApplicationLoadBalancer</span>(
+  scope,
+  <span class="hljs-string">`<span class="hljs-subst">${id}</span>_LoadBalancer`</span>,
+  {
+    vpc,
+    <span class="hljs-attr">internetFacing</span>: <span class="hljs-literal">true</span>,
+  },
+);
+<span class="hljs-keyword">const</span> listener = applicationLoadBalancer.<span class="hljs-title function_">addListener</span>(
+  <span class="hljs-string">`<span class="hljs-subst">${id}</span>_ALB_Listener`</span>,
+  {
+    <span class="hljs-attr">port</span>: <span class="hljs-number">80</span>, <span class="hljs-comment">// listen on port 80, not using https</span>
+    <span class="hljs-attr">open</span>: <span class="hljs-literal">true</span>,
+  },
+);
+<span class="hljs-comment">// the load balancer target group will automatically update the security group to allow </span>
+<span class="hljs-comment">// only itself to access the chosen port (public access is blocked).</span>
+<span class="hljs-keyword">const</span> loadBalancerTargetGroup = listener.<span class="hljs-title function_">addTargets</span>(<span class="hljs-string">`<span class="hljs-subst">${id}</span>_Ec2Fleet`</span>, {
+  <span class="hljs-attr">port</span>: <span class="hljs-number">3000</span>, <span class="hljs-comment">// we will run our application on port 3000</span>
+  targets,
+  <span class="hljs-attr">protocol</span>: aws_elasticloadbalancingv2.<span class="hljs-property">ApplicationProtocol</span>.<span class="hljs-property">HTTP</span>,
+  <span class="hljs-attr">deregistrationDelay</span>: <span class="hljs-title class_">Duration</span>.<span class="hljs-title function_">seconds</span>(<span class="hljs-number">10</span>),
+  <span class="hljs-attr">healthCheck</span>: {
+    <span class="hljs-attr">interval</span>: <span class="hljs-title class_">Duration</span>.<span class="hljs-title function_">seconds</span>(<span class="hljs-number">10</span>),
+    <span class="hljs-attr">healthyThresholdCount</span>: <span class="hljs-number">2</span>,
+  },
+});
+</code></pre>
+<h3 id="codedeploy" tabindex="-1">CodeDeploy</h3>
+<p>CodeDeploy allows us to configure how the application is deployed to the EC2 instances. It will load the source code provided via CodePipeline and start the application.</p>
+<pre class="hljs"><code><span class="hljs-keyword">const</span> application = <span class="hljs-keyword">new</span> aws_codedeploy.<span class="hljs-title class_">ServerApplication</span>(
+  scope,
+  <span class="hljs-string">`<span class="hljs-subst">${id}</span>_CodeDeployApplication`</span>,
+  {
+    applicationName,
+  },
+);
+<span class="hljs-keyword">const</span> deploymentGroup = <span class="hljs-keyword">new</span> aws_codedeploy.<span class="hljs-title class_">ServerDeploymentGroup</span>(
+  scope,
+  <span class="hljs-string">`<span class="hljs-subst">${id}</span>_DeploymentGroup`</span>,
+  {
+    application,
+    <span class="hljs-attr">deploymentGroupName</span>: <span class="hljs-string">`<span class="hljs-subst">${stackName}</span>_<span class="hljs-subst">${id}</span>_DeploymentGroup`</span>,
+    <span class="hljs-attr">autoScalingGroups</span>: [autoScalingGroup],
+    <span class="hljs-attr">installAgent</span>: <span class="hljs-literal">false</span>, <span class="hljs-comment">// we installed the agent manually with user data</span>
+    <span class="hljs-attr">loadBalancer</span>: aws_codedeploy.<span class="hljs-property">LoadBalancer</span>.<span class="hljs-title function_">application</span>(
+      loadBalancerTargetGroup,
+    ),
+    <span class="hljs-comment">// encourages uptime while still deploying relatively quickly</span>
+    <span class="hljs-attr">deploymentConfig</span>: aws_codedeploy.<span class="hljs-property">ServerDeploymentConfig</span>.<span class="hljs-property">HALF_AT_A_TIME</span>,
+  },
+);
+</code></pre>
+<h3 id="codepipeline" tabindex="-1">CodePipeline</h3>
+<p>To know what to deploy, CodeDeploy needs either be invoked manually, or it needs to be provided with a source from CodePipeline. CodePipeline will watch the source bucket for changes to the source code archive using CloudTrail.</p>
+<pre class="hljs"><code><span class="hljs-keyword">const</span> <span class="hljs-variable constant_">source</span> = <span class="hljs-keyword">new</span> codepipeline.<span class="hljs-title function_ invoke__">Artifact</span>();
+<span class="hljs-keyword">const</span> <span class="hljs-variable constant_">codePipeline</span> = <span class="hljs-keyword">new</span> aws_codepipeline.<span class="hljs-title function_ invoke__">Pipeline</span>(scope, `${id}_Pipeline`, {
+  <span class="hljs-attr">stages</span>: [
+    {
+      <span class="hljs-attr">stageName</span>: <span class="hljs-string">&#x27;GetSource&#x27;</span>,
+      <span class="hljs-attr">actions</span>: [
+        <span class="hljs-keyword">new</span> aws_codepipeline_actions.<span class="hljs-title function_ invoke__">S3SourceAction</span>({
+          <span class="hljs-attr">actionName</span>: <span class="hljs-string">&#x27;S3Source&#x27;</span>,
+          <span class="hljs-attr">bucket</span>: sourceBucket,
+          <span class="hljs-attr">bucketKey</span>: <span class="hljs-string">&#x27;source.zip&#x27;</span>, // needs to <span class="hljs-keyword">match</span> the CloudTrail key
+          <span class="hljs-attr">output</span>: source,
+          // uses the CloudTrail trail we created earlier to watch <span class="hljs-keyword">for</span> changes
+          <span class="hljs-attr">trigger</span>: aws_codepipeline_actions.S3Trigger.EVENTS,
+        }),
+      ],
+    },
+    {
+      <span class="hljs-attr">stageName</span>: <span class="hljs-string">&#x27;Deploy&#x27;</span>,
+      <span class="hljs-attr">actions</span>: [
+        <span class="hljs-keyword">new</span> aws_codepipeline_actions.<span class="hljs-title function_ invoke__">CodeDeployServerDeployAction</span>({
+          <span class="hljs-attr">actionName</span>: <span class="hljs-string">&#x27;CodeDeploy&#x27;</span>,
+          <span class="hljs-attr">input</span>: source,
+          deploymentGroup,
+        }),
+      ],
+    },
+  ],
+});
+</code></pre>
+<h3 id="cloudfront" tabindex="-1">CloudFront</h3>
+<p>CloudFront will be the final piece before Route53. It will allow us to use a custom domain name and SSL certificate. It will also cache the application to reduce the load on the EC2 fleet.</p>
+<pre class="hljs"><code><span class="hljs-keyword">const</span> origin = <span class="hljs-keyword">new</span> aws_cloudfront_origins.<span class="hljs-title class_">LoadBalancerV2Origin</span>(applicationLoadBalancer, {
+   <span class="hljs-comment">// load balancer uses HTTP, not HTTPS</span>
+  <span class="hljs-attr">protocolPolicy</span>: aws_cloudfront.<span class="hljs-property">OriginProtocolPolicy</span>.<span class="hljs-property">HTTP_ONLY</span>,
+})
+
+<span class="hljs-comment">// Pre-created certificate mentioned earlier, or you can create one</span>
+<span class="hljs-keyword">declare</span> <span class="hljs-keyword">const</span> <span class="hljs-attr">certificateArn</span>: <span class="hljs-built_in">string</span>;
+
+<span class="hljs-keyword">const</span> distribution = <span class="hljs-keyword">new</span> aws_cloudfront.<span class="hljs-title class_">Distribution</span>(
+  scope,
+  <span class="hljs-string">`<span class="hljs-subst">${id}</span>_Cloudfront`</span>,
+  {
+    <span class="hljs-attr">comment</span>: <span class="hljs-string">`<span class="hljs-subst">${stackName}</span> <span class="hljs-subst">${id}</span> cache behaviour`</span>,
+    <span class="hljs-attr">defaultBehavior</span>: {
+      origin,
+      <span class="hljs-attr">allowedMethods</span>: aws_cloudfront.<span class="hljs-property">AllowedMethods</span>.<span class="hljs-property">ALLOW_ALL</span>,
+      <span class="hljs-attr">cachePolicy</span>: <span class="hljs-keyword">new</span> aws_cloudfront.<span class="hljs-title class_">CachePolicy</span>(
+        scope,
+        <span class="hljs-string">`<span class="hljs-subst">${id}</span>_CachePolicy`</span>,
+        {
+          <span class="hljs-attr">defaultTtl</span>: <span class="hljs-title class_">Duration</span>.<span class="hljs-title function_">seconds</span>(<span class="hljs-number">10</span>), <span class="hljs-comment">// adjust to your needs</span>
+          <span class="hljs-attr">minTtl</span>: <span class="hljs-title class_">Duration</span>.<span class="hljs-title function_">seconds</span>(<span class="hljs-number">0</span>),
+          <span class="hljs-attr">maxTtl</span>: <span class="hljs-title class_">Duration</span>.<span class="hljs-title function_">hours</span>(<span class="hljs-number">1</span>),
+        },
+      ),
+    },
+    <span class="hljs-attr">domainNames</span>: [appDomainName],
+    <span class="hljs-attr">certificate</span>: aws_certificatemanager.<span class="hljs-property">Certificate</span>.<span class="hljs-title function_">fromCertificateArn</span>(
+      scope,
+      <span class="hljs-string">`<span class="hljs-subst">${id}</span>_CloudFront_CertificateReference`</span>,
+      certificateArn,
+    ),
+  },
+);
+</code></pre>
+<h3 id="route53" tabindex="-1">Route53</h3>
+<p>Now we will add the DNS records to Route53. This will allow us to use the custom domain name with the application.</p>
+<pre class="hljs"><code>
+<span class="hljs-keyword">declare</span> <span class="hljs-keyword">const</span> <span class="hljs-attr">hostedZoneId</span>: <span class="hljs-built_in">string</span>;
+<span class="hljs-keyword">declare</span> <span class="hljs-keyword">const</span> <span class="hljs-attr">zoneName</span>: <span class="hljs-built_in">string</span>;
+
+<span class="hljs-keyword">new</span> route53.<span class="hljs-title class_">ARecord</span>(scope, <span class="hljs-string">`<span class="hljs-subst">${id}</span>_ARecord`</span>, {
+  <span class="hljs-attr">zone</span>: route53.<span class="hljs-property">HostedZone</span>.<span class="hljs-title function_">fromHostedZoneAttributes</span>(
+    scope,
+    <span class="hljs-string">`<span class="hljs-subst">${id}</span>_HostedZoneReference`</span>,
+    {
+      hostedZoneId,
+      zoneName,
+    },
+  ),
+  recordName,
+  <span class="hljs-attr">target</span>: route53.<span class="hljs-property">RecordTarget</span>.<span class="hljs-title function_">fromAlias</span>(
+    <span class="hljs-keyword">new</span> route53Targets.<span class="hljs-title class_">CloudFrontTarget</span>(distribution),
+  ),
+})
+</code></pre>
+<h2 id="releasing-code" tabindex="-1">Releasing code</h2>
+<p>Now that we have the infrastructure in place, we need to deploy code to our fleet. We will zip a source bundle up with an appspec.yml file and some bash scripts for starting and stopping the server.</p>
+<h3 id="contents-of-source-archive%3A" tabindex="-1">Contents of source archive:</h3>
+<pre class="hljs"><code>/source
+├── <span class="hljs-selector-class">.env</span>
+├── appspec<span class="hljs-selector-class">.yml</span>
+├── server<span class="hljs-selector-class">.js</span>
+├── start-server<span class="hljs-selector-class">.sh</span>
+└── stop-server<span class="hljs-selector-class">.sh</span>
+</code></pre>
+<h3 id="appspec.yml" tabindex="-1">appspec.yml</h3>
+<pre class="hljs"><code><span class="hljs-attribute">version</span><span class="hljs-punctuation">:</span> <span class="hljs-string">0.0</span>
+<span class="hljs-attribute">os</span><span class="hljs-punctuation">:</span> <span class="hljs-string">linux</span>
+<span class="hljs-attribute">hooks</span><span class="hljs-punctuation">:</span>
+  <span class="hljs-attribute">ApplicationStop</span><span class="hljs-punctuation">:</span>
+    <span class="hljs-bullet">-</span> <span class="hljs-string">location: ./stop-server.sh</span>
+      <span class="hljs-attribute">timeout</span><span class="hljs-punctuation">:</span> <span class="hljs-string">300</span>
+      <span class="hljs-attribute">runas</span><span class="hljs-punctuation">:</span> <span class="hljs-string">root</span>
+  <span class="hljs-attribute">ApplicationStart</span><span class="hljs-punctuation">:</span>
+    <span class="hljs-bullet">-</span> <span class="hljs-string">location: ./start-server.sh</span>
+      <span class="hljs-attribute">timeout</span><span class="hljs-punctuation">:</span> <span class="hljs-string">300</span>
+      <span class="hljs-attribute">runas</span><span class="hljs-punctuation">:</span> <span class="hljs-string">root</span>
+</code></pre>
+<h3 id="start-server" tabindex="-1">start-server</h3>
+<pre class="hljs"><code><span class="hljs-meta">#!/bin/bash</span>
+
+<span class="hljs-built_in">export</span> HOME=/home/ec2-user
+<span class="hljs-built_in">source</span> ~/.bashrc
+
+<span class="hljs-comment"># run the server from the correct directory</span>
+parent_path=$( <span class="hljs-built_in">cd</span> <span class="hljs-string">&quot;<span class="hljs-subst">$(dirname <span class="hljs-string">&quot;<span class="hljs-variable">${BASH_SOURCE[0]}</span>&quot;</span>)</span>&quot;</span> ; <span class="hljs-built_in">pwd</span> -P )
+<span class="hljs-built_in">cd</span> <span class="hljs-string">&quot;<span class="hljs-variable">$parent_path</span>&quot;</span>
+
+<span class="hljs-comment"># use pm2 to manage server processes</span>
+npm i pm2 -g
+
+<span class="hljs-comment"># load environment variables from .env file</span>
+<span class="hljs-built_in">export</span> $(<span class="hljs-built_in">cat</span> ./.env | xargs)
+
+pm2 start ./server.js --name server
+</code></pre>
+<h3 id="stop-server" tabindex="-1">stop-server</h3>
+<pre class="hljs"><code><span class="hljs-meta">#!/bin/bash</span>
+
+<span class="hljs-built_in">export</span> HOME=/home/ec2-user
+<span class="hljs-built_in">source</span> ~/.bashrc
+
+pm2 stop server
+</code></pre>
+<h3 id=".env-and-server.js" tabindex="-1">.env and server.js</h3>
+<p>The <code>.env</code> file should be populated with the environment variables needed to run the application.</p>
+<p><code>server.js</code> can either be a bundle, or you can have multiple javascript files that require each other. Because I’m using TypeScript, I tend to favour bundling the code using esbuild.</p>
+<h3 id="release-script" tabindex="-1">Release script</h3>
+<p>Your build/release script should assemble the correct files into a folder, archive it as a zip file, and upload it to the source bucket as <code>source.zip</code> (or whatever you specified).</p>
+<pre class="hljs"><code><span class="hljs-meta">#!/bin/bash</span>
+
+npm run build:server <span class="hljs-comment"># bundle server file</span>
+
+<span class="hljs-comment"># copy files to source folder</span>
+<span class="hljs-built_in">cp</span> ./dist/server.js ./ec2-fleet-source/server.js
+<span class="hljs-built_in">cp</span> ./infra/assets/.env ./ec2-fleet-source/.env
+<span class="hljs-built_in">cp</span> ./infra/assets/appspec.yml ./ec2-fleet-source/appspec.yml
+<span class="hljs-built_in">cp</span> ./infra/assets/start-server.sh ./ec2-fleet-source/start-server.sh
+<span class="hljs-built_in">cp</span> ./infra/assets/stop-server.sh ./ec2-fleet-source/stop-server.sh
+zip -r ./ec2-fleet-source/source.zip ./ec2-fleet-source
+
+<span class="hljs-comment"># upload source archive and trigger CodePipeline/CodeDeploy</span>
+aws s3api put-object --bucket jackbliss.co.uk.source --key source.zip --body ./ec2-fleet-source/source.zip
+</code></pre>
+<h2 id="limitations" tabindex="-1">Limitations</h2>
+<p>The load balancer uses only HTTP, not HTTPS. You can configure ALB to use HTTPS, but note that the certificate region must be the same as the ALB region. This means that you will need to create a certificate in the same region as your ALB. Your CloudFront certificate must be in the us-east-1 region.</p>
+<p>You can also configure the ALB to only accept traffic from CloudFront in a variety of ways, for example with a <a href="https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/restrict-access-to-load-balancer.html">custom header</a> or <a href="https://dev.to/iilness2/3-practical-way-how-to-restrict-the-access-to-our-load-balancer-nlb-alb-on-aws-eks-195j">by IP address</a>.</p>
+<p>There is also the issue of logging - currently, all console logs will be emitted to the EC2 instance that logged them, and nowhere else. Instead, you could create a CloudWatch log group, or an SNS topic, and send logs there.</p>
+
+  </div>
+</body>
+
+</html>
